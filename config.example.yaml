@@ -1,0 +1,91 @@
+# SnapCraft configuration example
+# Copy to config.yaml and adjust for your server.
+
+server:
+  name: my-minecraft-server
+  world_path: /path/to/server/world
+  control:
+    type: rcon  # rcon | console | none
+    rcon:
+      host: 127.0.0.1
+      port: 25575
+      password: your-rcon-password
+      timeout: 10s
+    console:
+      input_path: /path/to/server/input.fifo
+      output_path: /path/to/server/logs/latest.log
+
+backup:
+  mode: incremental  # archive | directory | incremental
+  compression: zstd  # zstd | gzip | none
+  hash_method: blake3  # blake3 | sha256
+  staging_dir: /tmp/snapcraft
+  lock_file: /tmp/snapcraft.lock
+  safety_backup_local: true
+  exclude_patterns:
+    - "session.lock"
+  archive:
+    include_paths: []
+  cdc:
+    enabled: true
+    min_size: 65536
+    avg_size: 1048576
+    max_size: 4194304
+    min_file_size: 8388608
+
+repository:
+  local_path: ./snapcraft-repo
+  cleanup_after_verified_upload: false
+  keep_local_manifests: true
+  verify_after_backup: true
+  verify_after_upload: true
+
+upload:
+  enabled: true
+
+rclone:
+  binary: rclone
+  remote: myremote:crypt
+  remote_path: snapcraft/my-minecraft-server
+  bwlimit: 10M
+  transfers: 4
+  checkers: 8
+  timeout: 30m
+  retries: 3
+  extra_args: []
+
+retention:
+  daily: 7
+  weekly: 4
+  monthly: 0
+
+schedule:
+  enabled: false
+  cron: "0 4 * * *"
+
+notify:
+  webhook:
+    enabled: false
+    url: https://hooks.example.com/backup
+  email:
+    enabled: false
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    from: snapcraft@example.com
+    to: admin@example.com
+    username: ""
+    password: ""
+
+log:
+  level: info
+  file: ""
+  format: text
+
+# Singleplayer example (control.type: none):
+# server:
+#   name: MyWorld
+#   world_path: C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld
+#   control:
+#     type: none
+# upload:
+#   enabled: false

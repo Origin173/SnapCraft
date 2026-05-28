@@ -23,7 +23,7 @@ var pruneCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		store := snapshot.NewStore(cfg, rclone.NewExecRunner(cfg))
+		store := snapshot.NewStore(cfg, rclone.NewRunner(cfg))
 		manifests, err := store.List(context.Background())
 		if err != nil {
 			return err

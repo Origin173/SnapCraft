@@ -25,6 +25,7 @@ func init() {
 	RootCmd.AddCommand(scheduleCmd)
 	RootCmd.AddCommand(pruneCmd)
 	RootCmd.AddCommand(repoCmd)
+	RootCmd.AddCommand(rcloneCmd)
 }
 
 func Execute() {

@@ -100,7 +100,6 @@ type UploadConfig struct {
 }
 
 type RcloneConfig struct {
-	Binary     string        `yaml:"binary"`
 	Remote     string        `yaml:"remote"`
 	RemotePath string        `yaml:"remote_path"`
 	BwLimit    string        `yaml:"bwlimit"`
@@ -223,9 +222,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Repository.KeepLocalManifests == false && !cfg.Repository.CleanupAfterVerifiedUpload {
 		cfg.Repository.KeepLocalManifests = true
-	}
-	if cfg.Rclone.Binary == "" {
-		cfg.Rclone.Binary = "rclone"
 	}
 	if cfg.Rclone.Transfers == 0 {
 		cfg.Rclone.Transfers = 4

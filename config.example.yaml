@@ -44,7 +44,6 @@ upload:
   enabled: true
 
 rclone:
-  binary: rclone
   remote: myremote:crypt
   remote_path: snapcraft/my-minecraft-server
   bwlimit: 10M

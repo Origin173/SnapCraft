@@ -40,7 +40,11 @@ var scheduleRunCmd = &cobra.Command{
 		}
 		defer mc.Close()
 
-		runner := rclone.NewExecRunner(cfg)
+		if err := rclone.EnsureRemoteConfigured(cfg); err != nil {
+			return err
+		}
+
+		runner := rclone.NewRunner(cfg)
 		notifier := notify.BuildFromConfig(cfg)
 		backupSvc, err := backup.NewService(cfg, mc, runner, notifier)
 		if err != nil {

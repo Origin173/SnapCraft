@@ -2,14 +2,14 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Origin173%2FSnapCraft-blue)](https://github.com/Origin173/SnapCraft)
 
-Minecraft 服务器联动备份工具：通过 RCON 安全暂停存档，使用 [rclone](https://rclone.org/) 备份到 WebDAV、S3、Google Drive 等云盘，并支持快照列表与回档。
+Minecraft 服务器联动备份工具：通过 RCON 安全暂停存档，内置 [rclone](https://rclone.org/) 备份到 WebDAV、S3、Google Drive 等云盘，并支持快照列表与回档。
 
 **仓库地址：** https://github.com/Origin173/SnapCraft
 
 ## 功能
 
 - 服务器联动：`save-off` → `save-all flush` → 备份 → `save-on`
-- rclone 驱动所有云盘传输，支持 crypt 加密 remote
+- 内置 rclone 驱动所有云盘传输，支持 crypt 加密 remote
 - 本地优先仓库 + 可选 WebDAV/rclone 上传
 - SQLite + hash 对象池 + CDC 增量备份（参考 PrimeBackup）
 - 默认本地恢复，`--remote` 从远端拉取

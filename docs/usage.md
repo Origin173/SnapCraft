@@ -2,11 +2,12 @@
 
 项目仓库：[https://github.com/Origin173/SnapCraft](https://github.com/Origin173/SnapCraft)
 
-SnapCraft 是一款 Minecraft 服务器联动备份工具，通过 RCON 或控制台安全暂停存档保存，并使用 [rclone](https://rclone.org/) 将备份上传到各类云盘。
+SnapCraft 是一款 Minecraft 服务器联动备份工具，通过 RCON 或控制台安全暂停存档保存，并使用内置 [rclone](https://rclone.org/) 将备份上传到各类云盘。
 
 ## 环境要求
 
-- [rclone](https://rclone.org/install/) 已安装并完成云盘 remote 配置
+- 无需单独安装 rclone；SnapCraft 已内置 rclone 库
+- 使用 `snapcraft rclone` 命令配置云盘 remote
 - Minecraft Java 版服务器开启 RCON，或提供控制台管道访问（基岩版/console 模式）
 - 从源码构建时需要 Go 1.22+
 
@@ -38,7 +39,7 @@ go install github.com/Origin173/SnapCraft/cmd/snapcraft@latest
 cp config.example.yaml config.yaml
 ```
 
-2. 编辑 `config.yaml`，填写服务器路径、RCON 信息和 rclone remote。
+2. 编辑 `config.yaml`，填写服务器路径、RCON 信息，并用 `snapcraft rclone create` 配置云盘 remote。
 
 3. 校验配置：
 
@@ -187,16 +188,28 @@ backup:
 
 ### rclone 与加密
 
-SnapCraft 不直接对接云盘 API，所有上传/下载均通过 rclone 执行。客户端加密请配置 rclone crypt remote：
+SnapCraft 内置 rclone，不直接对接云盘 API。所有上传/下载均通过嵌入式 rclone 执行。客户端加密请配置 rclone crypt remote：
 
 ```bash
-rclone config
-# 创建 crypt remote，包装底层 remote
+# 查看支持的存储类型
+snapcraft rclone providers
+
+# 创建 WebDAV remote 示例
+snapcraft rclone create myremote webdav url=https://example.com/dav vendor=other user=alice pass=secret
+
+# 创建 crypt remote 包装底层 remote
+snapcraft rclone create myremote-crypt crypt remote=myremote filename_encryption=standard directory_name_encryption=true password=your-crypt-password
+
+# 查看 / 更新 / 删除 remote
+snapcraft rclone list
+snapcraft rclone show myremote
+snapcraft rclone update myremote pass=newsecret
+snapcraft rclone delete myremote --yes
 ```
 
 ```yaml
 rclone:
-  remote: myremote:crypt
+  remote: myremote-crypt
   remote_path: snapcraft/my-minecraft-server
   bwlimit: 10M
 ```

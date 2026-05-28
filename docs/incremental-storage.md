@@ -91,4 +91,4 @@ snapcraft backup run --world "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWo
 
 ## WebDAV 校验说明
 
-优先使用 `rclone check` 对比本地与远端。若 remote 不支持 checksum，退化为 size + manifest hash 校验（可靠性略低，见 `docs/usage.md`）。
+优先使用内置 rclone 的 `check` 对比本地与远端。若 remote 不支持 checksum，退化为 size + manifest hash 校验（可靠性略低，见 `docs/usage.md`）。

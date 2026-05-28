@@ -37,8 +37,8 @@ var restoreCmd = &cobra.Command{
 			source = restoreSource
 		}
 
-		if source == restore.SourceRemote && cfg.Upload.Enabled {
-			if err := rclone.EnsureAvailable(cfg); err != nil {
+		if source == restore.SourceRemote {
+			if err := rclone.EnsureRemoteConfigured(cfg); err != nil {
 				return err
 			}
 		}
@@ -49,7 +49,7 @@ var restoreCmd = &cobra.Command{
 		}
 		defer mc.Close()
 
-		runner := rclone.NewExecRunner(cfg)
+		runner := rclone.NewRunner(cfg)
 		notifier := notify.BuildFromConfig(cfg)
 		backupSvc, err := backup.NewService(cfg, mc, runner, notifier)
 		if err != nil {

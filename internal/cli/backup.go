@@ -38,10 +38,8 @@ var backupRunCmd = &cobra.Command{
 		if backupName != "" {
 			cfg.Server.Name = backupName
 		}
-		if cfg.Upload.Enabled {
-			if err := rclone.EnsureAvailable(cfg); err != nil {
-				return err
-			}
+		if err := rclone.EnsureRemoteConfigured(cfg); err != nil {
+			return err
 		}
 
 		mc, err := minecraft.NewController(cfg)
@@ -50,7 +48,7 @@ var backupRunCmd = &cobra.Command{
 		}
 		defer mc.Close()
 
-		runner := rclone.NewExecRunner(cfg)
+		runner := rclone.NewRunner(cfg)
 		notifier := notify.BuildFromConfig(cfg)
 		svc, err := backup.NewService(cfg, mc, runner, notifier)
 		if err != nil {

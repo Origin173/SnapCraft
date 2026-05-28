@@ -60,6 +60,9 @@ type Result struct {
 
 // Run executes a full backup cycle.
 func (s *Service) Run(ctx context.Context) (*Result, error) {
+	if err := config.EnsureBackupDirs(s.cfg); err != nil {
+		return nil, err
+	}
 	lock, err := lockfile.Acquire(s.lockPath)
 	if err != nil {
 		return nil, err

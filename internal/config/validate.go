@@ -94,8 +94,8 @@ func ValidatePaths(cfg *Config) error {
 	if _, err := os.Stat(cfg.Server.WorldPath); err != nil {
 		return fmt.Errorf("server.world_path does not exist: %w", err)
 	}
-	if err := os.MkdirAll(cfg.Backup.StagingDir, 0o755); err != nil {
-		return fmt.Errorf("backup.staging_dir: %w", err)
+	if err := EnsureBackupDirs(cfg); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(cfg.Repository.LocalPath, 0o755); err != nil {
 		return fmt.Errorf("repository.local_path: %w", err)

@@ -19,7 +19,7 @@ backup:
   mode: incremental  # archive | directory | incremental
   compression: zstd  # zstd | gzip | none
   hash_method: blake3  # blake3 | sha256
-  staging_dir: /tmp/snapcraft
+  staging_dir: /tmp/snapcraft   # auto-rewritten to OS temp dir on Windows
   lock_file: /tmp/snapcraft.lock
   safety_backup_local: true
   exclude_patterns:

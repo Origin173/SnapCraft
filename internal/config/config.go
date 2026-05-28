@@ -207,12 +207,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Backup.HashMethod == "" {
 		cfg.Backup.HashMethod = HashBlake3
 	}
-	if cfg.Backup.StagingDir == "" {
-		cfg.Backup.StagingDir = os.TempDir()
-	}
-	if cfg.Backup.LockFile == "" {
-		cfg.Backup.LockFile = "snapcraft.lock"
-	}
 	if cfg.Backup.CDC.MinSize == 0 {
 		cfg.Backup.CDC.MinSize = 65536
 	}
@@ -261,6 +255,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.WebUI.CookieName == "" {
 		cfg.WebUI.CookieName = "snapcraft_webui"
 	}
+	normalizeBackupPaths(cfg)
 }
 
 func applyEnvOverrides(cfg *Config) {

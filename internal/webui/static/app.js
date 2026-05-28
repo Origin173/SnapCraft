@@ -85,7 +85,7 @@ const LABELS = {
   controlType: { rcon: "RCON", console: "控制台", none: "离线模式" },
   snapStatus: { completed: "完成", failed: "失败", running: "运行中", pending: "等待" },
   select: {
-    rcon: "RCON", console: "控制台", none: "离线（无需联动）",
+    rcon: "RCON", console: "控制台", none: "单人存档（离线）",
     archive: "归档", directory: "目录", incremental: "增量",
     zstd: "Zstd", gzip: "Gzip", none: "不压缩",
     blake3: "BLAKE3", sha256: "SHA-256",
@@ -96,11 +96,11 @@ const LABELS = {
 
 const SETTINGS_SECTIONS = [
   {
-    id: "server", title: "服务器", desc: "Minecraft 服务器与世界路径，以及存档联动方式。",
+    id: "server", title: "服务器", desc: "Minecraft 服务器与世界路径。单人存档无需 RCON，多人服务器需配置联动方式。",
     fields: [
       { path: "server.name", label: "名称", type: "text" },
       { path: "server.world_path", label: "世界路径", type: "text", hint: "存档目录的绝对路径" },
-      { path: "server.control.type", label: "联动方式", type: "select", options: ["rcon", "console", "none"] },
+      { path: "server.control.type", label: "联动方式", type: "controlMode" },
       { path: "server.control.rcon.host", label: "RCON 地址", type: "text", showIf: (c) => c.server.control.type === "rcon" },
       { path: "server.control.rcon.port", label: "RCON 端口", type: "number", showIf: (c) => c.server.control.type === "rcon" },
       { path: "server.control.rcon.password", label: "RCON 密码", type: "password", placeholder: "留空保持不变", showIf: (c) => c.server.control.type === "rcon" },
@@ -306,6 +306,65 @@ $("run-backup").addEventListener("click", async () => {
   } catch (err) { toast(err.message, true); }
 });
 
+function controlProfileFromType(type) {
+  return type === "none" ? "singleplayer" : "server";
+}
+
+function renderControlModeSwitcher(activeProfile, { hint = "", linkSettings = false } = {}) {
+  const singleActive = activeProfile === "singleplayer";
+  const serverActive = activeProfile === "server";
+  return `
+    <div class="mode-switch" role="group" aria-label="存档模式">
+      <button type="button" class="mode-btn ${singleActive ? "active" : ""}" data-profile="singleplayer">
+        <span class="mode-btn-title">单人存档</span>
+        <span class="mode-btn-desc">直接备份本地世界，无需服务器在线</span>
+      </button>
+      <button type="button" class="mode-btn ${serverActive ? "active" : ""}" data-profile="server">
+        <span class="mode-btn-title">多人服务器</span>
+        <span class="mode-btn-desc">通过 RCON/控制台执行 save-off 后备份</span>
+      </button>
+    </div>
+    ${hint ? `<p class="control-mode-hint">${hint}</p>` : ""}
+    ${linkSettings ? `<button type="button" class="btn btn-ghost btn-sm control-mode-settings">配置 RCON / 控制台</button>` : ""}
+  `;
+}
+
+async function setControlProfile(profile) {
+  const res = await api("/api/config/control-mode", {
+    method: "POST",
+    body: JSON.stringify({ profile }),
+  });
+  if (state.config) {
+    if (profile === "singleplayer") setPath(state.config, "server.control.type", "none");
+    else if (getPath(state.config, "server.control.type") === "none") setPath(state.config, "server.control.type", "rcon");
+  }
+  toast(res.message || "存档模式已更新");
+  if (state.view === "dashboard") loadDashboard();
+  if (state.view === "settings" && state.settingsTab === "server") renderSettingsContent();
+  return res;
+}
+
+function bindControlModeSwitcher(container, activeProfile) {
+  container.querySelectorAll("[data-profile]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const profile = btn.dataset.profile;
+      if (profile === activeProfile) return;
+      try {
+        btn.disabled = true;
+        await setControlProfile(profile);
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+  container.querySelector(".control-mode-settings")?.addEventListener("click", () => {
+    state.settingsTab = "server";
+    setView("settings");
+  });
+}
+
 async function loadDashboard() {
   const data = await api("/api/status");
   const mode = LABELS.backupMode[data.backup.mode] || data.backup.mode;
@@ -318,14 +377,32 @@ async function loadDashboard() {
   const repo = data.repository.exists ? "正常" : "未初始化";
   const uploadClass = data.upload.enabled && (!data.upload.remote_exists || !data.upload.configured) ? "warn" : "";
 
+  const controlProfile = data.server.control_profile || controlProfileFromType(data.server.control_type);
+  const controlLabel = controlProfile === "singleplayer" ? "单人存档" : (LABELS.controlType[data.server.control_type] || "服务器");
+  let controlHint = controlProfile === "singleplayer"
+    ? "当前为单人存档模式：备份时不会连接 RCON，适合本地 .minecraft/saves 世界。"
+    : `当前为多人服务器模式（${LABELS.controlType[data.server.control_type] || data.server.control_type}）。请确保服务器在线且 RCON 可连接，否则 save-off 会失败。`;
+  if (controlProfile === "server" && data.server.control_type === "rcon") {
+    controlHint += " 若实际玩的是单人存档，请切换到「单人存档」。";
+  }
+
   $("status-grid").innerHTML = `
     <div class="stat-card"><div class="stat-label">服务器</div><div class="stat-value">${esc(data.server.name)}</div></div>
+    <div class="stat-card"><div class="stat-label">存档模式</div><div class="stat-value">${controlLabel}</div></div>
     <div class="stat-card"><div class="stat-label">备份模式</div><div class="stat-value">${mode}</div></div>
     <div class="stat-card"><div class="stat-label">快照</div><div class="stat-value">${data.repository.snapshots}</div></div>
     <div class="stat-card"><div class="stat-label">仓库</div><div class="stat-value ${data.repository.exists ? "ok" : "warn"}">${repo}</div></div>
     <div class="stat-card"><div class="stat-label">远程上传</div><div class="stat-value ${uploadClass}">${upload}</div></div>
     <div class="stat-card"><div class="stat-label">定时任务</div><div class="stat-value">${data.schedule.enabled ? data.schedule.cron : "未启用"}</div></div>
   `;
+
+  const modeBody = $("control-mode-body");
+  modeBody.innerHTML = renderControlModeSwitcher(controlProfile, {
+    hint: controlHint,
+    linkSettings: controlProfile === "server",
+  });
+  bindControlModeSwitcher(modeBody, controlProfile);
+
   renderJob(data.job);
 }
 
@@ -889,6 +966,25 @@ function renderSettingsContent() {
     el.addEventListener("change", onFieldChange);
     el.addEventListener("input", onFieldChange);
   });
+
+  $("config-form").querySelectorAll("[data-profile]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const profile = btn.dataset.profile;
+      const current = controlProfileFromType(getPath(state.config, "server.control.type"));
+      if (profile === current) return;
+      try {
+        if (state.configPath !== "") {
+          await setControlProfile(profile);
+        } else {
+          if (profile === "singleplayer") setPath(state.config, "server.control.type", "none");
+          else if (getPath(state.config, "server.control.type") === "none") setPath(state.config, "server.control.type", "rcon");
+          renderSettingsContent();
+        }
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
 }
 
 function renderField(field) {
@@ -905,6 +1001,28 @@ function renderField(field) {
         <input type="checkbox" class="switch-input" id="${id}" data-path="${field.path}" ${val ? "checked" : ""}>
         <span class="switch-track"></span>
       </label>`;
+  }
+
+  if (field.type === "controlMode") {
+    const profile = controlProfileFromType(getPath(state.config, "server.control.type"));
+    const controlType = getPath(state.config, "server.control.type") || "rcon";
+    const hint = profile === "singleplayer"
+      ? "单人存档：跳过 save-off，适合本地 saves 目录。"
+      : "多人服务器：备份前通过 RCON 或控制台暂停世界保存。";
+    return `
+      <div class="field-row field-row-block">
+        <div class="field-row-label">${field.label}<span class="field-row-hint">${hint}</span></div>
+        <div class="field-row-control">
+          ${renderControlModeSwitcher(profile, { linkSettings: false })}
+          <div class="control-mode-detail ${profile === "server" ? "" : "hidden"}" id="control-mode-detail">
+            <label class="field-label" for="${id}-link">服务器联动</label>
+            <select id="${id}-link" data-path="server.control.type">
+              <option value="rcon" ${controlType === "rcon" ? "selected" : ""}>RCON（推荐）</option>
+              <option value="console" ${controlType === "console" ? "selected" : ""}>控制台管道</option>
+            </select>
+          </div>
+        </div>
+      </div>`;
   }
 
   let control = "";

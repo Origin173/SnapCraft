@@ -32,12 +32,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uploadStatus, _ := rclone.UploadRemoteStatusFor(s.getConfig())
+	controlProfile := ControlProfile(s.getConfig())
+	controlType := s.getConfig().Server.Control.Type
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server": map[string]any{
-			"name":         s.getConfig().Server.Name,
-			"world_path":   s.getConfig().Server.WorldPath,
-			"control_type": s.getConfig().Server.Control.Type,
+			"name":             s.getConfig().Server.Name,
+			"world_path":       s.getConfig().Server.WorldPath,
+			"control_type":     controlType,
+			"control_profile":  controlProfile,
+			"needs_save_off":   s.getConfig().NeedsServerControl(),
 		},
 		"backup": map[string]any{
 			"mode":        s.getConfig().Backup.Mode,

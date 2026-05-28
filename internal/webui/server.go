@@ -126,6 +126,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/config", s.requireAuth(http.HandlerFunc(s.handleGetConfig)))
 	mux.Handle("PUT /api/config", s.requireAuth(http.HandlerFunc(s.handlePutConfig)))
 	mux.Handle("POST /api/config/validate", s.requireAuth(http.HandlerFunc(s.handleValidateConfig)))
+	mux.Handle("POST /api/config/control-mode", s.requireAuth(http.HandlerFunc(s.handleSetControlMode)))
 	mux.Handle("GET /api/logs", s.requireAuth(http.HandlerFunc(s.handleListLogs)))
 	mux.Handle("DELETE /api/logs", s.requireAuth(http.HandlerFunc(s.handleClearLogs)))
 

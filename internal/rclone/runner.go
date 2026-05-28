@@ -251,7 +251,12 @@ func EnsureRemoteConfigured(cfg *config.Config) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("rclone remote %q not found; configure it with: snapcraft rclone create %s <type> key=value...", remoteName, remoteName)
+	msg := fmt.Sprintf("rclone remote %q not found", remoteName)
+	if len(remotes) > 0 {
+		msg += fmt.Sprintf("; available remotes: %s", strings.Join(remotes, ", "))
+	}
+	msg += fmt.Sprintf("; configure via WebUI or: snapcraft rclone create %s <type> key=value...", remoteName)
+	return fmt.Errorf("%s", msg)
 }
 
 // FakeRunner is a test double recording calls.

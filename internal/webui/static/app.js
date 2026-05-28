@@ -3,14 +3,73 @@ const state = {
   snapshots: [],
   restoreId: null,
   jobPoll: null,
+  logPoll: null,
   config: null,
   configPath: "",
   settingsTab: "server",
   editRemoteName: null,
+  editRemoteType: null,
+  editRemoteValues: null,
   providers: [],
+  showAdvanced: false,
+  rcloneStatus: null,
+  uploadRemotes: [],
 };
 
 const REDACTED = "••••••••";
+
+const WEBDAV_VENDORS = [
+  { value: "openlist", label: "OpenList" },
+  { value: "nextcloud", label: "Nextcloud" },
+  { value: "owncloud", label: "Owncloud" },
+  { value: "infinitescale", label: "ownCloud Infinite Scale" },
+  { value: "sharepoint", label: "SharePoint Online" },
+  { value: "sharepoint-ntlm", label: "SharePoint NTLM" },
+  { value: "fastmail", label: "Fastmail" },
+  { value: "rclone", label: "rclone WebDAV 服务" },
+  { value: "other", label: "其他 WebDAV" },
+];
+
+const WEBDAV_GUIDE = `
+<p><strong>WebDAV 接入说明</strong></p>
+<ul>
+  <li>保存后，在「远程上传」中选择远程并测试连接</li>
+  <li><strong>用户名/密码</strong> 与 <strong>Bearer Token</strong> 二选一</li>
+</ul>`;
+
+const WEBDAV_VENDOR_GUIDES = {
+  openlist: `
+<p><strong>OpenList 配置</strong></p>
+<ul>
+  <li><strong>vendor</strong>：选 <code>OpenList</code>（对应 rclone 的 <code>other</code>）</li>
+  <li><strong>url</strong>：<code>http://地址:端口/dav/</code>，如 <code>http://127.0.0.1:5244/dav/</code></li>
+  <li>挂载到某个存储盘时：<code>http://地址:5244/dav/存储名/</code>（如 <code>/dav/aliyundrive</code>）</li>
+  <li><strong>user</strong> / <strong>pass</strong>：OpenList 网页登录用户名与密码</li>
+  <li>在 OpenList「用户 → 权限」中开启 <code>Webdav Read</code>；上传还需 <code>Webdav Manage</code></li>
+  <li><strong>不要</strong>选 Nextcloud，否则会报 URL 格式错误</li>
+</ul>`,
+  nextcloud: `
+<p><strong>Nextcloud 配置（重要）</strong></p>
+<ul>
+  <li><strong>vendor</strong>：选 <code>nextcloud</code></li>
+  <li><strong>url</strong>：必须填 <code>https://域名/remote.php/dav/files/用户名/</code>（末尾保留 <code>/</code>）</li>
+  <li><strong>不要用</strong> <code>/remote.php/webdav/</code>，否则连接测试会失败</li>
+  <li><strong>user</strong> / <strong>pass</strong>：登录用户名与密码（推荐应用专用密码）</li>
+</ul>`,
+  owncloud: `
+<p><strong>Owncloud 配置</strong></p>
+<ul>
+  <li><strong>url</strong>：<code>https://域名/remote.php/webdav/</code></li>
+  <li><strong>user</strong> / <strong>pass</strong>：登录凭据</li>
+</ul>`,
+  other: `
+<p><strong>通用 WebDAV</strong></p>
+<ul>
+  <li><strong>vendor</strong>：选 <code>other</code></li>
+  <li><strong>url</strong>：服务商提供的 WebDAV 根地址</li>
+  <li><strong>user</strong> / <strong>pass</strong>：按服务商要求填写</li>
+</ul>`,
+};
 
 const LABELS = {
   jobStatus: { idle: "空闲", running: "运行中", succeeded: "成功", failed: "失败" },
@@ -72,11 +131,9 @@ const SETTINGS_SECTIONS = [
     ],
   },
   {
-    id: "upload", title: "远程上传", desc: "备份完成后上传到云存储。",
+    id: "upload", title: "远程上传", desc: "备份完成后上传到云存储。选择已配置的远程并测试连接。",
     fields: [
       { path: "upload.enabled", label: "启用远程上传", type: "toggle" },
-      { path: "rclone.remote", label: "Rclone 远程", type: "text", hint: "如 myremote:crypt" },
-      { path: "rclone.remote_path", label: "远程目录", type: "text", hint: "云盘上的目标路径" },
     ],
   },
   {
@@ -195,6 +252,8 @@ function setView(name) {
   document.querySelectorAll(".view").forEach((s) => s.classList.toggle("hidden", s.id !== `view-${name}`));
   if (name === "dashboard") loadDashboard();
   if (name === "snapshots") loadSnapshots();
+  if (name === "logs") { loadLogs(); startLogPoll(); }
+  else stopLogPoll();
   if (name === "settings") loadSettings();
 }
 
@@ -243,15 +302,21 @@ $("run-backup").addEventListener("click", async () => {
 async function loadDashboard() {
   const data = await api("/api/status");
   const mode = LABELS.backupMode[data.backup.mode] || data.backup.mode;
-  const upload = data.upload.enabled ? "已启用" : "未启用";
+  let upload = data.upload.enabled ? "已启用" : "未启用";
+  if (data.upload.enabled) {
+    if (!data.upload.remote_exists) upload = "远程缺失";
+    else if (!data.upload.configured) upload = "未完整配置";
+    else upload = "已就绪";
+  }
   const repo = data.repository.exists ? "正常" : "未初始化";
+  const uploadClass = data.upload.enabled && (!data.upload.remote_exists || !data.upload.configured) ? "warn" : "";
 
   $("status-grid").innerHTML = `
     <div class="stat-card"><div class="stat-label">服务器</div><div class="stat-value">${esc(data.server.name)}</div></div>
     <div class="stat-card"><div class="stat-label">备份模式</div><div class="stat-value">${mode}</div></div>
     <div class="stat-card"><div class="stat-label">快照</div><div class="stat-value">${data.repository.snapshots}</div></div>
     <div class="stat-card"><div class="stat-label">仓库</div><div class="stat-value ${data.repository.exists ? "ok" : "warn"}">${repo}</div></div>
-    <div class="stat-card"><div class="stat-label">远程上传</div><div class="stat-value">${upload}</div></div>
+    <div class="stat-card"><div class="stat-label">远程上传</div><div class="stat-value ${uploadClass}">${upload}</div></div>
     <div class="stat-card"><div class="stat-label">定时任务</div><div class="stat-value">${data.schedule.enabled ? data.schedule.cron : "未启用"}</div></div>
   `;
   renderJob(data.job);
@@ -288,6 +353,207 @@ function stopJobPoll() {
   if (state.jobPoll) clearInterval(state.jobPoll);
   state.jobPoll = null;
 }
+
+function startLogPoll() {
+  stopLogPoll();
+  if (!$("logs-auto-refresh")?.checked) return;
+  state.logPoll = setInterval(() => loadLogs().catch(() => {}), 3000);
+}
+
+function stopLogPoll() {
+  if (state.logPoll) clearInterval(state.logPoll);
+  state.logPoll = null;
+}
+
+async function loadLogs() {
+  const level = $("logs-level").value;
+  const source = $("logs-source").value;
+  const qs = new URLSearchParams();
+  if (level) qs.set("level", level);
+  if (source) qs.set("source", source);
+  qs.set("limit", "200");
+  const data = await api(`/api/logs?${qs}`);
+  const list = $("log-list");
+  const logs = data.logs || [];
+  if (!logs.length) {
+    list.innerHTML = `<div class="empty-state">暂无日志</div>`;
+    return;
+  }
+  list.innerHTML = logs.map((l) => {
+    const fields = l.fields && Object.keys(l.fields).length
+      ? `<div class="log-fields">${esc(JSON.stringify(l.fields))}</div>` : "";
+    return `
+    <div class="log-row">
+      <span class="log-time">${formatTime(l.time)}</span>
+      <span class="log-level ${esc(l.level)}">${esc(l.level)}</span>
+      <span class="log-source">${esc(l.source)}</span>
+      <span class="log-msg">${esc(l.message)}</span>
+      ${fields}
+    </div>`;
+  }).join("");
+}
+
+$("logs-refresh").addEventListener("click", () => loadLogs().catch((e) => toast(e.message, true)));
+$("logs-clear").addEventListener("click", async () => {
+  if (!confirm("清空当前运行期日志？")) return;
+  try {
+    await api("/api/logs", { method: "DELETE" });
+    toast("日志已清空");
+    loadLogs();
+  } catch (err) { toast(err.message, true); }
+});
+$("logs-level").addEventListener("change", () => loadLogs().catch(() => {}));
+$("logs-source").addEventListener("change", () => loadLogs().catch(() => {}));
+$("logs-auto-refresh").addEventListener("change", () => {
+  if (state.view === "logs") {
+    if ($("logs-auto-refresh").checked) startLogPoll();
+    else stopLogPoll();
+  }
+});
+
+function webdavUrlPlaceholder(vendor) {
+  if (vendor === "openlist") return "http://127.0.0.1:5244/dav/";
+  if (vendor === "nextcloud") return "https://cloud.example.com/remote.php/dav/files/用户名/";
+  return "https://example.com/dav/";
+}
+
+function uiVendorFromRemote(remote) {
+  const vendor = remote?.vendor || "other";
+  const url = remote?.url || "";
+  if (vendor === "other" && /\/dav(\/|$)/i.test(url)) return "openlist";
+  return vendor;
+}
+
+function normalizeWebdavParams(params) {
+  if (params.vendor === "openlist") params.vendor = "other";
+  return params;
+}
+
+function getProvider(type) {
+  return state.providers.find((p) => p.name === type);
+}
+
+function visibleOptions(provider, showAdvanced) {
+  if (!provider?.options) return [];
+  return provider.options.filter((o) => !o.hide && (showAdvanced || !o.advanced));
+}
+
+function renderProviderForm(container, providerName, values, showAdvanced, idPrefix) {
+  const provider = getProvider(providerName);
+  container.innerHTML = "";
+  if (!provider) return;
+
+  visibleOptions(provider, showAdvanced).forEach((opt) => {
+    const id = `${idPrefix}-${opt.name}`;
+    const val = values?.[opt.name] ?? opt.default ?? "";
+    const isPass = opt.password || opt.sensitive;
+    const hint = opt.help ? `<span class="field-row-hint">${esc(opt.help)}</span>` : "";
+    let control = "";
+
+    if (opt.type === "bool" || opt.type === "boolean") {
+      control = `<label class="check-row"><input type="checkbox" data-opt="${esc(opt.name)}" ${val === "true" || val === true ? "checked" : ""}><span>${opt.name}</span></label>`;
+    } else if (opt.exclusive && opt.examples?.length) {
+      const opts = opt.examples.map((ex) => {
+        const v = ex.value ?? ex.Value ?? ex;
+        const label = ex.description || ex.Description || v;
+        return `<option value="${esc(v)}" ${String(val) === String(v) ? "selected" : ""}>${esc(label)}</option>`;
+      }).join("");
+      control = `<select data-opt="${esc(opt.name)}">${opts}</select>`;
+    } else if (providerName === "webdav" && opt.name === "url") {
+      const vendor = values?.vendor || container.closest("form")?.querySelector('[data-opt="vendor"]')?.value || "openlist";
+      control = `<input type="text" data-opt="${esc(opt.name)}" value="${esc(val)}" placeholder="${esc(webdavUrlPlaceholder(vendor))}">`;
+    } else if (providerName === "webdav" && opt.name === "vendor") {
+      control = `<select data-opt="vendor" id="${idPrefix}-vendor">${WEBDAV_VENDORS.map((v) =>
+        `<option value="${v.value}" ${String(val) === v.value ? "selected" : ""}>${v.label}</option>`
+      ).join("")}</select>`;
+    } else if (isPass) {
+      const display = val === REDACTED ? "" : esc(val);
+      control = `<input type="password" data-opt="${esc(opt.name)}" data-password="1" placeholder="留空保持不变" value="${display}">`;
+    } else if (opt.type === "int" || opt.type === "float") {
+      control = `<input type="number" data-opt="${esc(opt.name)}" value="${esc(val)}">`;
+    } else {
+      control = `<input type="text" data-opt="${esc(opt.name)}" value="${esc(val)}">`;
+    }
+
+    const row = document.createElement("div");
+    row.className = "field-row";
+    row.innerHTML = `
+      <div class="field-row-label">${esc(opt.name)}${opt.required ? " *" : ""}${hint}</div>
+      <div class="field-row-control">${control}</div>`;
+    container.appendChild(row);
+  });
+
+  if (providerName === "webdav") {
+    const vendorEl = container.querySelector('[data-opt="vendor"]');
+    if (vendorEl) {
+      vendorEl.addEventListener("change", () => {
+        renderWebdavGuide(true, vendorEl.value);
+        renderProviderForm(container, providerName, collectProviderForm(container, false), showAdvanced, idPrefix);
+      });
+    }
+  }
+}
+
+function collectProviderForm(container, isEdit) {
+  const params = {};
+  container.querySelectorAll("[data-opt]").forEach((el) => {
+    const key = el.dataset.opt;
+    if (el.type === "checkbox") {
+      params[key] = el.checked ? "true" : "false";
+    } else if (el.dataset.password) {
+      if (el.value === "") {
+        if (isEdit) params[key] = REDACTED;
+      } else {
+        params[key] = el.value;
+      }
+    } else if (el.value !== "") {
+      params[key] = el.value;
+    }
+  });
+  return params;
+}
+
+function renderWebdavGuide(show, vendor = "nextcloud") {
+  const box = $("webdav-guide");
+  if (show) {
+    box.innerHTML = WEBDAV_GUIDE + (WEBDAV_VENDOR_GUIDES[vendor] || WEBDAV_VENDOR_GUIDES.other);
+    showEl(box);
+  } else {
+    hideEl(box);
+  }
+}
+
+function showEl(el) { el.classList.remove("hidden"); }
+function hideEl(el) { el.classList.add("hidden"); }
+
+function onProviderTypeChange() {
+  const type = $("remote-type").value;
+  renderWebdavGuide(type === "webdav", "openlist");
+  renderProviderForm($("provider-form"), type, { vendor: "openlist" }, $("show-advanced-options").checked, "create");
+}
+
+async function loadProviders(force) {
+  if (state.providers.length && !force) return;
+  try {
+    const data = await api("/api/rclone/providers");
+    state.providers = data.providers || [];
+    $("remote-type").innerHTML = state.providers.map((p) =>
+      `<option value="${esc(p.name)}">${esc(p.name)}${p.description ? ` — ${esc(p.description)}` : ""}</option>`
+    ).join("");
+  } catch (_) {
+    $("remote-type").innerHTML = `<option value="webdav">webdav</option>`;
+    state.providers = [{ name: "webdav", options: [] }];
+  }
+  onProviderTypeChange();
+}
+
+$("remote-type").addEventListener("change", onProviderTypeChange);
+$("show-advanced-options").addEventListener("change", onProviderTypeChange);
+$("edit-show-advanced")?.addEventListener("change", () => {
+  if (state.editRemoteType) {
+    renderProviderForm($("remote-edit-form-fields"), state.editRemoteType, state.editRemoteValues || {}, $("edit-show-advanced").checked, "edit");
+  }
+});
 
 async function loadSnapshots() {
   const data = await api("/api/snapshots");
@@ -397,26 +663,69 @@ function paramsToText(obj) {
   return Object.entries(obj || {}).map(([k, v]) => `${k}=${v}`).join("\n");
 }
 
-async function loadProviders() {
-  if (state.providers.length) return;
+function parseRemoteSpec(spec) {
+  const text = String(spec || "").trim();
+  const i = text.indexOf(":");
+  if (i < 0) return { name: text, subpath: "" };
+  return { name: text.slice(0, i), subpath: text.slice(i + 1) };
+}
+
+function joinRemoteSpec(name, subpath) {
+  name = String(name || "").trim();
+  subpath = String(subpath || "").trim();
+  if (!subpath) return name;
+  return `${name}:${subpath}`;
+}
+
+async function loadRcloneStatus() {
   try {
-    const data = await api("/api/rclone/providers");
-    state.providers = data.providers || [];
-    $("remote-type").innerHTML = state.providers.map((p) =>
-      `<option value="${esc(p.name)}">${esc(p.name)}</option>`
-    ).join("");
+    const data = await api("/api/rclone/status");
+    state.rcloneStatus = data;
+    state.uploadRemotes = data.remotes || [];
+    return data;
   } catch (_) {
-    $("remote-type").innerHTML = `<option value="webdav">webdav</option>`;
+    state.rcloneStatus = null;
+    state.uploadRemotes = [];
+    return null;
   }
 }
 
+async function testRemoteConnection(name, subpath = "") {
+  const data = await api(`/api/rclone/remotes/${encodeURIComponent(name)}/test`, {
+    method: "POST",
+    body: JSON.stringify({ path: subpath || "" }),
+  });
+  const result = data.result || {};
+  const detail = result.hint ? `${result.message}\n${result.hint}` : (result.message || "");
+  toast(detail || (result.ok ? "连接成功" : "连接失败"), !result.ok);
+  return result;
+}
+
+async function testUploadPath() {
+  const data = await api("/api/rclone/test-upload", { method: "POST", body: "{}" });
+  const result = data.result || {};
+  toast(result.message || (result.ok ? "上传路径可用" : "上传路径测试失败"), !result.ok);
+  return result;
+}
+
+function setUploadRemote(name, subpath = "") {
+  if (!state.config) return;
+  setPath(state.config, "rclone.remote", joinRemoteSpec(name, subpath));
+  if (!getPath(state.config, "upload.enabled")) {
+    setPath(state.config, "upload.enabled", true);
+  }
+  toast(`已设为上传远程：${joinRemoteSpec(name, subpath) || name}`);
+  if (state.settingsTab === "upload") renderUploadSection();
+}
+
 async function loadRemotes() {
-  await loadProviders();
+  await loadProviders(false);
+  await loadRcloneStatus();
   const data = await api("/api/rclone/remotes");
   const list = $("remote-list");
   const names = data.remotes || [];
   if (!names.length) {
-    list.innerHTML = `<div class="empty-state" style="padding:24px">尚未添加远程连接</div>`;
+    list.innerHTML = `<div class="empty-state" style="padding:24px">尚未添加远程连接。添加后可在「远程上传」中选用并测试。</div>`;
     return;
   }
   const items = await Promise.all(names.map(async (name) => {
@@ -430,11 +739,23 @@ async function loadRemotes() {
         <div class="remote-type">${esc(remote.type || "—")}</div>
       </div>
       <div class="remote-actions">
-        <button class="btn btn-ghost btn-sm edit-remote" data-name="${esc(name)}">编辑</button>
+        <button class="btn btn-ghost btn-sm test-remote" data-name="${esc(name)}">测试连接</button>
+        <button class="btn btn-ghost btn-sm use-upload-remote" data-name="${esc(name)}">设为上传远程</button>
+        <button class="btn btn-ghost btn-sm edit-remote" data-name="${esc(name)}" data-type="${esc(remote.type || "")}">编辑</button>
         <button class="btn btn-ghost btn-sm btn-danger delete-remote" data-name="${esc(name)}">删除</button>
       </div>
     </div>
   `).join("");
+  list.querySelectorAll(".test-remote").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      b.disabled = true;
+      await testRemoteConnection(b.dataset.name);
+    } catch (err) { toast(err.message, true); }
+    finally { b.disabled = false; }
+  }));
+  list.querySelectorAll(".use-upload-remote").forEach((b) => b.addEventListener("click", () => {
+    setUploadRemote(b.dataset.name);
+  }));
   list.querySelectorAll(".delete-remote").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm(`删除远程「${b.dataset.name}」？`)) return;
     await api(`/api/rclone/remotes/${encodeURIComponent(b.dataset.name)}`, { method: "DELETE" });
@@ -444,8 +765,13 @@ async function loadRemotes() {
   list.querySelectorAll(".edit-remote").forEach((b) => b.addEventListener("click", async () => {
     const remote = await api(`/api/rclone/remotes/${encodeURIComponent(b.dataset.name)}`);
     state.editRemoteName = b.dataset.name;
-    $("remote-edit-title").textContent = b.dataset.name;
-    $("remote-edit-params").value = paramsToText(remote);
+    state.editRemoteType = remote.type || b.dataset.type;
+    state.editRemoteValues = { ...remote, vendor: uiVendorFromRemote(remote) };
+    delete state.editRemoteValues.type;
+    $("remote-edit-title").textContent = `${b.dataset.name} (${state.editRemoteType})`;
+    $("remote-edit-params").value = "";
+    $("edit-show-advanced").checked = false;
+    renderProviderForm($("remote-edit-form-fields"), state.editRemoteType, state.editRemoteValues, false, "edit");
     $("remote-edit-dialog").showModal();
   }));
 }
@@ -455,15 +781,19 @@ $("refresh-remotes").addEventListener("click", loadRemotes);
 $("rclone-create-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
+    const params = normalizeWebdavParams(collectProviderForm($("provider-form"), false));
+    Object.assign(params, parseParams($("remote-params").value));
     await api("/api/rclone/remotes", {
       method: "POST",
       body: JSON.stringify({
         name: $("remote-name").value.trim(),
         type: $("remote-type").value,
-        parameters: parseParams($("remote-params").value),
+        parameters: params,
       }),
     });
     e.target.reset();
+    $("remote-params").value = "";
+    onProviderTypeChange();
     toast("远程已添加");
     loadRemotes();
   } catch (err) { toast(err.message, true); }
@@ -473,9 +803,11 @@ $("remote-edit-form").addEventListener("submit", async (e) => {
   if (e.submitter?.id !== "remote-edit-submit") return;
   e.preventDefault();
   try {
+    const params = normalizeWebdavParams(collectProviderForm($("remote-edit-form-fields"), true));
+    Object.assign(params, parseParams($("remote-edit-params").value));
     await api(`/api/rclone/remotes/${encodeURIComponent(state.editRemoteName)}`, {
       method: "PATCH",
-      body: JSON.stringify({ parameters: parseParams($("remote-edit-params").value) }),
+      body: JSON.stringify({ parameters: params }),
     });
     $("remote-edit-dialog").close();
     toast("已更新");
@@ -511,6 +843,12 @@ function renderSettingsContent() {
 
   if (isRclone) {
     loadRemotes();
+    return;
+  }
+
+  const isUpload = section.id === "upload";
+  if (isUpload) {
+    renderUploadSection();
     return;
   }
 
@@ -567,6 +905,135 @@ function renderField(field) {
     </div>`;
 }
 
+async function renderUploadSection() {
+  if (!state.config) return;
+  await loadRcloneStatus();
+
+  const form = $("config-form");
+  show(form);
+  const spec = parseRemoteSpec(getPath(state.config, "rclone.remote"));
+  const remotePath = getPath(state.config, "rclone.remote_path") || "";
+  const enabled = !!getPath(state.config, "upload.enabled");
+  const upload = state.rcloneStatus?.upload || {};
+  const remotes = state.uploadRemotes.length ? state.uploadRemotes : (state.rcloneStatus?.remotes || []);
+
+  let bannerClass = "ok";
+  let bannerText = "上传远程已配置且可用。";
+  if (!enabled) {
+    bannerClass = "warn";
+    bannerText = "远程上传未启用。";
+  } else if (!spec.name) {
+    bannerClass = "error";
+    bannerText = "请选择云存储远程。";
+  } else if (!upload.remote_exists) {
+    bannerClass = "error";
+    bannerText = `远程「${spec.name}」不存在。请先在「云存储远程」中添加，或修改上传配置。`;
+    if (upload.available?.length) {
+      bannerText += ` 已有远程：${upload.available.join("、")}`;
+    }
+  } else if (!remotePath.trim()) {
+    bannerClass = "warn";
+    bannerText = "请填写云盘上的目标目录（remote_path）。";
+  }
+
+  const remoteOptions = remotes.map((r) => {
+    const name = typeof r === "string" ? r : r.name;
+    const type = typeof r === "string" ? "" : (r.type || "");
+    return `<option value="${esc(name)}" ${spec.name === name ? "selected" : ""}>${esc(name)}${type ? ` (${esc(type)})` : ""}</option>`;
+  }).join("");
+  const missingRemote = spec.name && !remotes.some((r) => (typeof r === "string" ? r : r.name) === spec.name)
+    ? `<option value="${esc(spec.name)}" selected>${esc(spec.name)} (未找到)</option>`
+    : "";
+
+  form.innerHTML = `
+    <div id="upload-status-banner" class="status-banner ${bannerClass}">${esc(bannerText)}</div>
+    <label class="switch-row" for="f-upload-enabled">
+      <div class="switch-info">
+        <span class="switch-label">启用远程上传</span>
+        <span class="switch-hint">备份完成后同步到云存储</span>
+      </div>
+      <input type="checkbox" class="switch-input" id="f-upload-enabled" data-upload-field="enabled" ${enabled ? "checked" : ""}>
+      <span class="switch-track"></span>
+    </label>
+    <div class="field-row">
+      <div class="field-row-label">
+        云存储远程
+        <span class="field-row-hint">在「云存储远程」页添加 WebDAV 等连接</span>
+      </div>
+      <div class="field-row-control">
+        <select id="f-upload-remote" data-upload-field="remote">
+          <option value="">— 选择远程 —</option>
+          ${missingRemote}${remoteOptions}
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">
+        远程内子路径
+        <span class="field-row-hint">可选，如 crypt 表示远程根目录下的 crypt 文件夹</span>
+      </div>
+      <div class="field-row-control">
+        <input type="text" id="f-upload-subpath" data-upload-field="subpath" value="${esc(spec.subpath)}" placeholder="留空表示远程根目录">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">
+        备份目标目录
+        <span class="field-row-hint">云盘上的 SnapCraft 数据路径，如 snapcraft/服务器名</span>
+      </div>
+      <div class="field-row-control">
+        <input type="text" id="f-upload-remote-path" data-upload-field="remote_path" value="${esc(remotePath)}" placeholder="snapcraft/my-server">
+      </div>
+    </div>
+    <div class="upload-preview">完整路径：<code>${esc(upload.full_fs || joinRemoteSpec(spec.name, spec.subpath) + (remotePath ? ":" + remotePath : ""))}</code></div>
+    <div class="upload-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="upload-test-remote">测试远程连接</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="upload-test-path">测试上传路径</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="upload-goto-rclone">管理云存储远程</button>
+    </div>
+  `;
+
+  const syncUploadConfig = () => {
+    const remoteName = $("f-upload-remote").value.trim();
+    const subpath = $("f-upload-subpath").value.trim();
+    const pathVal = $("f-upload-remote-path").value.trim();
+    setPath(state.config, "upload.enabled", $("f-upload-enabled").checked);
+    setPath(state.config, "rclone.remote", joinRemoteSpec(remoteName, subpath));
+    setPath(state.config, "rclone.remote_path", pathVal);
+  };
+
+  form.querySelectorAll("[data-upload-field]").forEach((el) => {
+    el.addEventListener("change", () => { syncUploadConfig(); renderUploadSection(); });
+    el.addEventListener("input", syncUploadConfig);
+  });
+
+  $("upload-test-remote").addEventListener("click", async () => {
+    syncUploadConfig();
+    const remoteName = $("f-upload-remote").value.trim();
+    if (!remoteName) { toast("请先选择远程", true); return; }
+    try {
+      $("upload-test-remote").disabled = true;
+      await testRemoteConnection(remoteName, $("f-upload-subpath").value.trim());
+    } catch (err) { toast(err.message, true); }
+    finally { $("upload-test-remote").disabled = false; }
+  });
+
+  $("upload-test-path").addEventListener("click", async () => {
+    syncUploadConfig();
+    try {
+      $("upload-test-path").disabled = true;
+      await testUploadPath();
+    } catch (err) { toast(err.message, true); }
+    finally { $("upload-test-path").disabled = false; }
+  });
+
+  $("upload-goto-rclone").addEventListener("click", () => {
+    state.settingsTab = "rclone";
+    renderSettingsNav();
+    renderSettingsContent();
+  });
+}
+
 function onFieldChange(e) {
   const el = e.target;
   const path = el.dataset.path;
@@ -593,6 +1060,15 @@ async function loadSettings() {
 
 function collectConfig() {
   const cfg = JSON.parse(JSON.stringify(state.config));
+  if (state.settingsTab === "upload") {
+    const remoteName = $("f-upload-remote")?.value?.trim() || "";
+    const subpath = $("f-upload-subpath")?.value?.trim() || "";
+    const remotePath = $("f-upload-remote-path")?.value?.trim() || "";
+    setPath(cfg, "upload.enabled", !!$("f-upload-enabled")?.checked);
+    setPath(cfg, "rclone.remote", joinRemoteSpec(remoteName, subpath));
+    setPath(cfg, "rclone.remote_path", remotePath);
+    return cfg;
+  }
   document.querySelectorAll("#config-form [data-path]").forEach((el) => {
     const path = el.dataset.path;
     let value;

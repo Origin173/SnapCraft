@@ -28,6 +28,7 @@ type Server struct {
 	configMu   sync.RWMutex
 	auth       *Auth
 	jobs       *JobManager
+	logs       *LogStore
 	handler    http.Handler
 }
 
@@ -40,8 +41,20 @@ func NewServer(cfg *config.Config, configPath string) (*Server, error) {
 		configPath: configPath,
 		auth:       NewAuth(cfg.WebUI.Token, cfg.WebUI.CookieName),
 		jobs:       NewJobManager(),
+		logs:       NewLogStore(defaultLogCapacity),
 	}
+	s.jobs.SetCallbacks(
+		func(op string) { s.logInfo("job", op+" 已开始", map[string]any{"operation": op}) },
+		func(op, status, msg string) {
+			level := "info"
+			if status == JobFailed {
+				level = "error"
+			}
+			s.logs.Append(level, "job", msg, map[string]any{"operation": op, "status": status})
+		},
+	)
 	s.handler = s.routes()
+	s.logInfo("server", "WebUI 已启动", map[string]any{"addr": cfg.WebUI.Addr})
 	return s, nil
 }
 
@@ -107,9 +120,14 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("PATCH /api/rclone/remotes/{name}", s.requireAuth(http.HandlerFunc(s.handleRcloneUpdate)))
 	mux.Handle("DELETE /api/rclone/remotes/{name}", s.requireAuth(http.HandlerFunc(s.handleRcloneDelete)))
 	mux.Handle("GET /api/rclone/providers", s.requireAuth(http.HandlerFunc(s.handleRcloneProviders)))
+	mux.Handle("GET /api/rclone/status", s.requireAuth(http.HandlerFunc(s.handleRcloneStatus)))
+	mux.Handle("POST /api/rclone/remotes/{name}/test", s.requireAuth(http.HandlerFunc(s.handleRcloneTestRemote)))
+	mux.Handle("POST /api/rclone/test-upload", s.requireAuth(http.HandlerFunc(s.handleRcloneTestUpload)))
 	mux.Handle("GET /api/config", s.requireAuth(http.HandlerFunc(s.handleGetConfig)))
 	mux.Handle("PUT /api/config", s.requireAuth(http.HandlerFunc(s.handlePutConfig)))
 	mux.Handle("POST /api/config/validate", s.requireAuth(http.HandlerFunc(s.handleValidateConfig)))
+	mux.Handle("GET /api/logs", s.requireAuth(http.HandlerFunc(s.handleListLogs)))
+	mux.Handle("DELETE /api/logs", s.requireAuth(http.HandlerFunc(s.handleClearLogs)))
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -142,14 +160,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.auth.ValidToken(body.Token) {
+		s.logWarn("auth", "登录失败：无效令牌", nil)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 		return
 	}
 	s.auth.SetSession(w, r, body.Token)
+	s.logInfo("auth", "用户已登录", nil)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if s.auth.Authenticated(r) {
+		s.logInfo("auth", "用户已退出", nil)
+	}
 	s.auth.ClearSession(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

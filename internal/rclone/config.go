@@ -45,7 +45,7 @@ func CreateRemote(name, remoteType string, parameters map[string]string) error {
 	params := map[string]any{
 		"name":       name,
 		"type":       remoteType,
-		"parameters": toAnyMap(parameters),
+		"parameters": toAnyMap(FilterCreateParameters(parameters)),
 		"opt": map[string]any{
 			"nonInteractive": true,
 			"obscure":        true,
@@ -92,13 +92,35 @@ func FormatRemoteConfig(cfg map[string]string) (string, error) {
 	return string(data), nil
 }
 
-// Provider describes a supported rclone backend type.
-type Provider struct {
-	Name        string
-	Description string
+// OptionExample is a selectable value for an rclone provider option.
+type OptionExample struct {
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
 }
 
-// ListProviders returns supported rclone storage provider types.
+// ProviderOption describes one rclone backend configuration field.
+type ProviderOption struct {
+	Name      string          `json:"name"`
+	Help      string          `json:"help,omitempty"`
+	Default   string          `json:"default,omitempty"`
+	Examples  []OptionExample `json:"examples,omitempty"`
+	Required  bool            `json:"required"`
+	Password  bool            `json:"password"`
+	Type      string          `json:"type,omitempty"`
+	Exclusive bool            `json:"exclusive"`
+	Advanced  bool            `json:"advanced"`
+	Hide      bool            `json:"hide"`
+	Sensitive bool            `json:"sensitive"`
+}
+
+// Provider describes a supported rclone backend type and its options.
+type Provider struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Options     []ProviderOption `json:"options,omitempty"`
+}
+
+// ListProviders returns supported rclone storage provider types with option schemas.
 func ListProviders() ([]Provider, error) {
 	out, err := configRPC.call("config/providers", nil)
 	if err != nil {
@@ -114,12 +136,105 @@ func ListProviders() ([]Provider, error) {
 		if !ok {
 			continue
 		}
-		name, _ := entry["Name"].(string)
+		name := stringField(entry, "Name", "name")
 		if name == "" {
 			continue
 		}
-		desc, _ := entry["Description"].(string)
-		providers = append(providers, Provider{Name: name, Description: desc})
+		providers = append(providers, Provider{
+			Name:        name,
+			Description: stringField(entry, "Description", "description"),
+			Options:     parseProviderOptions(entry["Options"], entry["options"]),
+		})
 	}
 	return providers, nil
+}
+
+func parseProviderOptions(primary, fallback any) []ProviderOption {
+	raw, ok := primary.([]any)
+	if !ok {
+		raw, ok = fallback.([]any)
+	}
+	if !ok {
+		return nil
+	}
+	out := make([]ProviderOption, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		opt := ProviderOption{
+			Name:      stringField(m, "Name", "name"),
+			Help:      stringField(m, "Help", "help"),
+			Default:   stringField(m, "Default", "default"),
+			Type:      stringField(m, "Type", "type"),
+			Required:  boolField(m, "Required", "required"),
+			Password:  boolField(m, "Password", "password") || boolField(m, "IsPassword", "is_password"),
+			Exclusive: boolField(m, "Exclusive", "exclusive"),
+			Advanced:  boolField(m, "Advanced", "advanced"),
+			Hide:      boolField(m, "Hide", "hide"),
+			Sensitive: boolField(m, "Sensitive", "sensitive"),
+		}
+		if opt.Name == "" {
+			continue
+		}
+		opt.Examples = parseOptionExamples(m["Examples"], m["examples"])
+		out = append(out, opt)
+	}
+	return out
+}
+
+func parseOptionExamples(primary, fallback any) []OptionExample {
+	raw, ok := primary.([]any)
+	if !ok {
+		raw, ok = fallback.([]any)
+	}
+	if !ok {
+		return nil
+	}
+	out := make([]OptionExample, 0, len(raw))
+	for _, item := range raw {
+		switch v := item.(type) {
+		case map[string]any:
+			value := stringField(v, "Value", "value")
+			if value == "" {
+				value = fmt.Sprint(v)
+			}
+			out = append(out, OptionExample{
+				Value:       value,
+				Description: stringField(v, "Description", "description"),
+			})
+		case string:
+			if v != "" {
+				out = append(out, OptionExample{Value: v})
+			}
+		}
+	}
+	return out
+}
+
+func stringField(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if v, ok := m[key]; ok && v != nil {
+			s := fmt.Sprint(v)
+			if s != "" && s != "<nil>" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func boolField(m map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if v, ok := m[key]; ok {
+			switch t := v.(type) {
+			case bool:
+				return t
+			case string:
+				return t == "true" || t == "1"
+			}
+		}
+	}
+	return false
 }

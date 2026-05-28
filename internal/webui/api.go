@@ -31,6 +31,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		repo.Close()
 	}
 
+	uploadStatus, _ := rclone.UploadRemoteStatusFor(s.getConfig())
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server": map[string]any{
 			"name":         s.getConfig().Server.Name,
@@ -47,9 +49,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"snapshots":  snapCount,
 		},
 		"upload": map[string]any{
-			"enabled":     s.getConfig().Upload.Enabled,
-			"remote":      s.getConfig().Rclone.Remote,
-			"remote_path": s.getConfig().Rclone.RemotePath,
+			"enabled":       s.getConfig().Upload.Enabled,
+			"remote":        s.getConfig().Rclone.Remote,
+			"remote_path":   s.getConfig().Rclone.RemotePath,
+			"remote_base":   uploadStatus.RemoteBase,
+			"remote_exists": uploadStatus.RemoteExists,
+			"configured":    uploadStatus.Configured,
+			"full_fs":       uploadStatus.FullFS,
 		},
 		"schedule": map[string]any{
 			"enabled": s.getConfig().Schedule.Enabled,
@@ -383,10 +389,13 @@ func (s *Server) handleRcloneCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("name and type are required"))
 		return
 	}
-	if err := rclone.CreateRemote(body.Name, body.Type, body.Parameters); err != nil {
+	params := rclone.FilterCreateParameters(body.Parameters)
+	if err := rclone.CreateRemote(body.Name, body.Type, params); err != nil {
+		s.logError("rclone", "创建远程失败", map[string]any{"name": body.Name, "type": body.Type, "error": err.Error()})
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.logInfo("rclone", "远程已创建", map[string]any{"name": body.Name, "type": body.Type})
 	writeJSON(w, http.StatusCreated, map[string]string{"message": fmt.Sprintf("created remote %q", body.Name)})
 }
 
@@ -403,19 +412,43 @@ func (s *Server) handleRcloneUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("parameters are required"))
 		return
 	}
-	if err := rclone.UpdateRemote(name, body.Parameters); err != nil {
+	existing, err := rclone.ShowRemote(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	merged := mergeRemoteParameters(body.Parameters, existing)
+	if err := rclone.UpdateRemote(name, merged); err != nil {
+		s.logError("rclone", "更新远程失败", map[string]any{"name": name, "error": err.Error()})
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.logInfo("rclone", "远程已更新", map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("updated remote %q", name)})
+}
+
+func mergeRemoteParameters(incoming, existing map[string]string) map[string]string {
+	out := make(map[string]string, len(incoming))
+	for k, v := range incoming {
+		if v == "" || v == redactedSecret {
+			if existingVal, ok := existing[k]; ok && existingVal != "" {
+				out[k] = existingVal
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Server) handleRcloneDelete(w http.ResponseWriter, r *http.Request) {
 	name := pathParam(r, "name")
 	if err := rclone.DeleteRemote(name); err != nil {
+		s.logError("rclone", "删除远程失败", map[string]any{"name": name, "error": err.Error()})
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.logInfo("rclone", "远程已删除", map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("deleted remote %q", name)})
 }
 
@@ -425,9 +458,5 @@ func (s *Server) handleRcloneProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	out := make([]map[string]string, 0, len(providers))
-	for _, p := range providers {
-		out = append(out, map[string]string{"name": p.Name, "description": p.Description})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
+	writeJSON(w, http.StatusOK, map[string]any{"providers": providers})
 }

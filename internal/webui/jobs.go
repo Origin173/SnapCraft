@@ -25,12 +25,21 @@ type Job struct {
 }
 
 type JobManager struct {
-	mu  sync.Mutex
-	job Job
+	mu       sync.Mutex
+	job      Job
+	onStart  func(operation string)
+	onFinish func(operation, status, message string)
 }
 
 func NewJobManager() *JobManager {
 	return &JobManager{job: Job{Status: JobIdle}}
+}
+
+func (m *JobManager) SetCallbacks(onStart func(string), onFinish func(operation, status, message string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onStart = onStart
+	m.onFinish = onFinish
 }
 
 func (m *JobManager) Current() Job {
@@ -86,7 +95,11 @@ func (m *JobManager) RunAsync(operation string, fn func(context.Context) (string
 		Operation: operation,
 		StartedAt: &now,
 	}
+	onStart := m.onStart
 	m.mu.Unlock()
+	if onStart != nil {
+		onStart(operation)
+	}
 
 	go func() {
 		msg, err := fn(context.Background())
@@ -94,13 +107,18 @@ func (m *JobManager) RunAsync(operation string, fn func(context.Context) (string
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.job.CompletedAt = &completed
+		status := JobSucceeded
 		if err != nil {
 			m.job.Status = JobFailed
 			m.job.Message = err.Error()
-			return
+			status = JobFailed
+		} else {
+			m.job.Status = JobSucceeded
+			m.job.Message = msg
 		}
-		m.job.Status = JobSucceeded
-		m.job.Message = msg
+		if onFinish := m.onFinish; onFinish != nil {
+			onFinish(operation, status, m.job.Message)
+		}
 	}()
 
 	return nil

@@ -83,6 +83,53 @@ func TestProtectedRouteRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestLogsAPIRequiresAuth(t *testing.T) {
+	cfg := testConfig(t)
+	s, err := NewServer(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	rec := httptest.NewRecorder()
+	s.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("logs status = %d", rec.Code)
+	}
+}
+
+func TestLogsAPIAuthenticated(t *testing.T) {
+	cfg := testConfig(t)
+	s, err := NewServer(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.logInfo("api", "test event", nil)
+
+	loginBody, _ := json.Marshal(map[string]string{"token": "secret-token"})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(loginBody))
+	loginRec := httptest.NewRecorder()
+	s.handler.ServeHTTP(loginRec, loginReq)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	for _, c := range loginRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	s.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logs status = %d", rec.Code)
+	}
+	var resp struct {
+		Logs []LogEntry `json:"logs"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Logs) == 0 {
+		t.Fatal("expected logs")
+	}
+}
+
 func TestRedactMap(t *testing.T) {
 	out := RedactMap(map[string]string{"user": "alice", "pass": "secret"})
 	if out["pass"] != "••••••••" {

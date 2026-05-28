@@ -30,6 +30,7 @@
           <nav class="main-nav" aria-label="主导航">
             <button class="nav-item active" data-view="dashboard">概览</button>
             <button class="nav-item" data-view="snapshots">快照</button>
+            <button class="nav-item" data-view="logs">日志</button>
             <button class="nav-item" data-view="settings">设置</button>
           </nav>
         </div>
@@ -88,6 +89,41 @@
           <div id="snapshot-list" class="list"></div>
         </section>
 
+        <!-- 日志 -->
+        <section id="view-logs" class="view hidden">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">日志</h1>
+              <p class="page-desc">当前 WebUI 进程运行期事件与任务记录</p>
+            </div>
+            <div class="page-actions">
+              <label class="check-inline">
+                <input type="checkbox" id="logs-auto-refresh" checked>
+                <span>自动刷新</span>
+              </label>
+              <button id="logs-refresh" class="btn btn-ghost">刷新</button>
+              <button id="logs-clear" class="btn btn-ghost btn-danger">清空</button>
+            </div>
+          </div>
+          <div class="log-toolbar">
+            <select id="logs-level">
+              <option value="">全部级别</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+            </select>
+            <select id="logs-source">
+              <option value="">全部来源</option>
+              <option value="server">server</option>
+              <option value="auth">auth</option>
+              <option value="job">job</option>
+              <option value="rclone">rclone</option>
+              <option value="api">api</option>
+            </select>
+          </div>
+          <div id="log-list" class="log-list"></div>
+        </section>
+
         <!-- 设置 -->
         <section id="view-settings" class="view hidden">
           <div class="page-head">
@@ -116,7 +152,16 @@
                     <select id="remote-type" required></select>
                     <button type="submit" class="btn btn-primary btn-sm">添加</button>
                   </div>
-                  <textarea id="remote-params" placeholder="参数，每行 key=value&#10;url=https://...&#10;user=alice&#10;pass=secret" rows="3"></textarea>
+                  <div id="webdav-guide" class="guide-box hidden"></div>
+                  <div id="provider-form" class="provider-form"></div>
+                  <label class="check-row">
+                    <input type="checkbox" id="show-advanced-options">
+                    <span>显示高级选项</span>
+                  </label>
+                  <details id="advanced-params-panel" class="advanced-panel">
+                    <summary>高级 key=value 参数</summary>
+                    <textarea id="remote-params" placeholder="可选：额外参数，每行 key=value" rows="3"></textarea>
+                  </details>
                 </form>
                 <div id="remote-list" class="remote-list"></div>
               </div>
@@ -149,12 +194,19 @@
     </form>
   </dialog>
 
-  <dialog id="remote-edit-dialog" class="modal">
+  <dialog id="remote-edit-dialog" class="modal modal-wide">
     <form method="dialog" id="remote-edit-form">
       <h3 class="modal-title">编辑远程</h3>
       <p id="remote-edit-title" class="modal-sub"></p>
-      <label class="field-label">参数（每行 key=value）</label>
-      <textarea id="remote-edit-params" rows="6"></textarea>
+      <div id="remote-edit-form-fields" class="provider-form"></div>
+      <label class="check-row">
+        <input type="checkbox" id="edit-show-advanced">
+        <span>显示高级选项</span>
+      </label>
+      <details class="advanced-panel">
+        <summary>高级 key=value 参数</summary>
+        <textarea id="remote-edit-params" rows="4"></textarea>
+      </details>
       <div class="modal-actions">
         <button value="cancel" class="btn btn-ghost">取消</button>
         <button id="remote-edit-submit" value="confirm" class="btn btn-primary">保存</button>

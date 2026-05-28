@@ -15,3 +15,13 @@ func TestHumanizeTestError(t *testing.T) {
 		t.Fatalf("hint = %q", hint)
 	}
 }
+
+func TestHumanizeEmptyURL(t *testing.T) {
+	msg, hint := humanizeTestError(`Propfind "/": unsupported protocol scheme ""`)
+	if msg != "WebDAV url 未配置或格式错误" {
+		t.Fatalf("msg = %q", msg)
+	}
+	if hint == "" {
+		t.Fatal("expected hint")
+	}
+}

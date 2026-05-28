@@ -389,7 +389,11 @@ func (s *Server) handleRcloneCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("name and type are required"))
 		return
 	}
-	params := rclone.FilterCreateParameters(body.Parameters)
+	params, err := rclone.PrepareRemoteParameters(body.Type, body.Parameters, true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if err := rclone.CreateRemote(body.Name, body.Type, params); err != nil {
 		s.logError("rclone", "创建远程失败", map[string]any{"name": body.Name, "type": body.Type, "error": err.Error()})
 		writeError(w, http.StatusInternalServerError, err)
@@ -418,6 +422,15 @@ func (s *Server) handleRcloneUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	merged := mergeRemoteParameters(body.Parameters, existing)
+	merged = rclone.NormalizeRemoteParameters(merged)
+	remoteType := existing["type"]
+	if remoteType == "" {
+		remoteType = "webdav"
+	}
+	if err := rclone.ValidateRemoteParameters(remoteType, merged, false); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if err := rclone.UpdateRemote(name, merged); err != nil {
 		s.logError("rclone", "更新远程失败", map[string]any{"name": name, "error": err.Error()})
 		writeError(w, http.StatusInternalServerError, err)

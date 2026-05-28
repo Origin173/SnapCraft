@@ -44,6 +44,32 @@ func TestFilterCreateParameters(t *testing.T) {
 	}
 }
 
+func TestValidateRemoteParameters(t *testing.T) {
+	if err := ValidateRemoteParameters("webdav", map[string]string{}, true); err == nil {
+		t.Fatal("expected error for missing url")
+	}
+	if err := ValidateRemoteParameters("webdav", map[string]string{"url": "127.0.0.1/dav/"}, true); err == nil {
+		t.Fatal("expected error for missing scheme")
+	}
+	if err := ValidateRemoteParameters("webdav", map[string]string{"url": "http://127.0.0.1:5244/dav/"}, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrepareRemoteParameters(t *testing.T) {
+	params, err := PrepareRemoteParameters("webdav", map[string]string{
+		"vendor": "openlist",
+		"url":    "http://127.0.0.1:5244/dav/",
+		"user":   "admin",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params["vendor"] != "other" {
+		t.Fatalf("vendor = %q", params["vendor"])
+	}
+}
+
 func TestUploadRemoteStatusFor(t *testing.T) {
 	old := configRPC
 	configRPC = &fakeRPC{response: map[string]any{"remotes": []any{"myremote", "other"}}}

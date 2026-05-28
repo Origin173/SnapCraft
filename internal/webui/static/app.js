@@ -18,6 +18,13 @@ const state = {
 
 const REDACTED = "••••••••";
 
+const WEBDAV_ESSENTIAL_OPTS = [
+  { name: "url", required: true, password: false, advanced: false, hide: false },
+  { name: "vendor", required: false, password: false, advanced: false, hide: false, exclusive: false },
+  { name: "user", required: false, password: false, advanced: false, hide: false },
+  { name: "pass", required: false, password: true, advanced: false, hide: false },
+];
+
 const WEBDAV_VENDORS = [
   { value: "openlist", label: "OpenList" },
   { value: "nextcloud", label: "Nextcloud" },
@@ -429,6 +436,24 @@ function normalizeWebdavParams(params) {
   return params;
 }
 
+function validateWebdavParams(params, isCreate) {
+  const url = String(params.url || "").trim();
+  if (!url) throw new Error("请填写 url（OpenList 示例：http://127.0.0.1:5244/dav/）");
+  if (!/^https?:\/\//i.test(url)) throw new Error("url 必须以 http:// 或 https:// 开头");
+  if (isCreate && !String(params.user || "").trim()) throw new Error("请填写 user（OpenList 登录用户名）");
+}
+
+function providerOptionsForForm(providerName, provider, showAdvanced) {
+  const opts = visibleOptions(provider, showAdvanced);
+  if (providerName !== "webdav") return opts;
+  const names = new Set(opts.map((o) => o.name));
+  const merged = [...opts];
+  for (const essential of WEBDAV_ESSENTIAL_OPTS) {
+    if (!names.has(essential.name)) merged.unshift(essential);
+  }
+  return merged;
+}
+
 function getProvider(type) {
   return state.providers.find((p) => p.name === type);
 }
@@ -443,7 +468,7 @@ function renderProviderForm(container, providerName, values, showAdvanced, idPre
   container.innerHTML = "";
   if (!provider) return;
 
-  visibleOptions(provider, showAdvanced).forEach((opt) => {
+  providerOptionsForForm(providerName, provider, showAdvanced).forEach((opt) => {
     const id = `${idPrefix}-${opt.name}`;
     const val = values?.[opt.name] ?? opt.default ?? "";
     const isPass = opt.password || opt.sensitive;
@@ -783,6 +808,7 @@ $("rclone-create-form").addEventListener("submit", async (e) => {
   try {
     const params = normalizeWebdavParams(collectProviderForm($("provider-form"), false));
     Object.assign(params, parseParams($("remote-params").value));
+    if ($("remote-type").value === "webdav") validateWebdavParams(params, true);
     await api("/api/rclone/remotes", {
       method: "POST",
       body: JSON.stringify({
@@ -805,6 +831,7 @@ $("remote-edit-form").addEventListener("submit", async (e) => {
   try {
     const params = normalizeWebdavParams(collectProviderForm($("remote-edit-form-fields"), true));
     Object.assign(params, parseParams($("remote-edit-params").value));
+    if (state.editRemoteType === "webdav") validateWebdavParams(params, false);
     await api(`/api/rclone/remotes/${encodeURIComponent(state.editRemoteName)}`, {
       method: "PATCH",
       body: JSON.stringify({ parameters: params }),

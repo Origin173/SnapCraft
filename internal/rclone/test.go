@@ -20,6 +20,9 @@ type TestResult struct {
 // TestList verifies that rclone can list the given remote path.
 func TestList(ctx context.Context, cfg *config.Config, fs string) TestResult {
 	fs = normalizeRemoteFS(fs)
+	if preflight := preflightRemoteTest(RemoteBaseName(fs)); preflight != nil {
+		return *preflight
+	}
 	runner := NewEmbeddedRunner(cfg)
 	entries, err := runner.ListJSON(ctx, fs)
 	if err != nil {
@@ -88,9 +91,34 @@ func normalizeRemoteFS(fs string) string {
 	return fs + ":"
 }
 
+func preflightRemoteTest(remoteName string) *TestResult {
+	remoteName = strings.TrimSpace(remoteName)
+	if remoteName == "" {
+		return nil
+	}
+	cfg, err := ShowRemote(remoteName)
+	if err != nil {
+		return nil
+	}
+	if cfg["type"] != "webdav" {
+		return nil
+	}
+	if err := ValidateRemoteParameters("webdav", cfg, false); err != nil {
+		return &TestResult{
+			OK:      false,
+			Message: err.Error(),
+			Hint:    "在 WebUI「云存储远程」中编辑该远程，填写 url、user、pass 后保存，再重新测试。",
+		}
+	}
+	return nil
+}
+
 func humanizeTestError(raw string) (message, hint string) {
 	lower := strings.ToLower(raw)
 	switch {
+	case strings.Contains(lower, "unsupported protocol scheme"):
+		return "WebDAV url 未配置或格式错误",
+			"请编辑远程，填写 url 字段（OpenList 示例：http://127.0.0.1:5244/dav/），必须以 http:// 或 https:// 开头。"
 	case strings.Contains(lower, "remote url looks incorrect") && strings.Contains(lower, "dav/files"):
 		return "WebDAV vendor 与地址不匹配",
 			"若使用 OpenList：vendor 选 other，url 填 http://地址:端口/dav/（如 http://127.0.0.1:5244/dav/），" +

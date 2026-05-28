@@ -80,6 +80,16 @@ log:
   file: ""
   format: text
 
+webui:
+  enabled: false
+  addr: 127.0.0.1:7824
+  token: change-me-to-a-long-random-token
+  cookie_name: snapcraft_webui
+
+# Start WebUI:
+# snapcraft --webui --config config.yaml
+# Or override token via SNAPCRAFT_WEBUI_TOKEN
+
 # Singleplayer example (control.type: none):
 # server:
 #   name: MyWorld

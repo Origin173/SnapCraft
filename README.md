@@ -17,6 +17,7 @@ Minecraft 服务器联动备份工具：通过 RCON 安全暂停存档，内置 
 - 归档、目录、增量三种备份模式
 - 快照列表、指定时间点恢复
 - Cron 定时备份、保留策略、Webhook/邮件通知
+- Token 登录的 WebUI 管理台（`--webui`）
 
 ## 快速开始
 
@@ -28,6 +29,9 @@ go build -o snapcraft ./cmd/snapcraft
 
 ./snapcraft config validate --config config.yaml
 ./snapcraft backup run --config config.yaml
+
+# WebUI（需配置 webui.token）
+./snapcraft --webui --config config.yaml
 ```
 
 ## 文档

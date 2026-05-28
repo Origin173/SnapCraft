@@ -37,6 +37,7 @@ type Config struct {
 	Schedule   ScheduleConfig   `yaml:"schedule"`
 	Notify     NotifyConfig     `yaml:"notify"`
 	Log        LogConfig        `yaml:"log"`
+	WebUI      WebUIConfig      `yaml:"webui"`
 }
 
 type ServerConfig struct {
@@ -147,6 +148,13 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 }
 
+type WebUIConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Addr       string `yaml:"addr"`
+	Token      string `yaml:"token"`
+	CookieName string `yaml:"cookie_name"`
+}
+
 // NeedsServerControl returns true when save-off/save-on commands are required.
 func (c *Config) NeedsServerControl() bool {
 	return c.Server.Control.Type != ControlNone
@@ -247,6 +255,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = "text"
 	}
+	if cfg.WebUI.Addr == "" {
+		cfg.WebUI.Addr = "127.0.0.1:7824"
+	}
+	if cfg.WebUI.CookieName == "" {
+		cfg.WebUI.CookieName = "snapcraft_webui"
+	}
 }
 
 func applyEnvOverrides(cfg *Config) {
@@ -279,6 +293,12 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("SNAPCRAFT_WEBHOOK_URL"); v != "" {
 		cfg.Notify.Webhook.URL = v
 		cfg.Notify.Webhook.Enabled = true
+	}
+	if v := os.Getenv("SNAPCRAFT_WEBUI_TOKEN"); v != "" {
+		cfg.WebUI.Token = v
+	}
+	if v := os.Getenv("SNAPCRAFT_WEBUI_ADDR"); v != "" {
+		cfg.WebUI.Addr = v
 	}
 }
 

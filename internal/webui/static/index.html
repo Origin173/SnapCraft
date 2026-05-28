@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapCraft · 备份控制台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 登录 -->
+    <section id="login-view" class="login-view hidden">
+      <div class="login-panel">
+        <div class="login-brand">SNAPCRAFT</div>
+        <p class="login-desc">Minecraft 世界备份管理控制台</p>
+        <form id="login-form" class="login-form">
+          <label class="field-label" for="token">访问令牌</label>
+          <input id="token" type="password" autocomplete="current-password" required placeholder="输入 webui.token">
+          <button type="submit" class="btn btn-primary btn-block">登录</button>
+        </form>
+        <p id="login-error" class="form-error hidden"></p>
+      </div>
+    </section>
+
+    <!-- 主界面 -->
+    <div id="main-view" class="shell hidden">
+      <header class="topbar">
+        <div class="topbar-start">
+          <span class="brand">SNAPCRAFT</span>
+          <nav class="main-nav" aria-label="主导航">
+            <button class="nav-item active" data-view="dashboard">概览</button>
+            <button class="nav-item" data-view="snapshots">快照</button>
+            <button class="nav-item" data-view="settings">设置</button>
+          </nav>
+        </div>
+        <div class="topbar-end">
+          <button id="run-backup" class="btn btn-primary">立即备份</button>
+          <button id="logout" class="btn btn-ghost">退出</button>
+        </div>
+      </header>
+
+      <main class="page">
+        <!-- 概览 -->
+        <section id="view-dashboard" class="view">
+          <div class="page-head">
+            <h1 class="page-title">概览</h1>
+            <p class="page-desc">服务器与备份运行状态一览</p>
+          </div>
+          <div id="status-grid" class="stat-grid"></div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2 class="panel-title">当前任务</h2>
+              <span id="job-badge" class="badge">空闲</span>
+            </div>
+            <div id="job-panel" class="job-body"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">快捷操作</h2></div>
+            <div class="action-grid">
+              <button id="repo-init" class="action-card">
+                <span class="action-title">初始化仓库</span>
+                <span class="action-desc">首次使用前创建本地仓库</span>
+              </button>
+              <button id="repo-verify" class="action-card">
+                <span class="action-title">校验快照</span>
+                <span class="action-desc">验证本地快照完整性</span>
+              </button>
+              <button id="prune-preview" class="action-card">
+                <span class="action-title">预览清理</span>
+                <span class="action-desc">查看保留策略将删除的快照</span>
+              </button>
+              <button id="prune-apply" class="action-card action-danger">
+                <span class="action-title">执行清理</span>
+                <span class="action-desc">按保留策略删除过期快照</span>
+              </button>
+            </div>
+            <div id="prune-result" class="prune-result hidden"></div>
+            <p id="repo-message" class="inline-msg hidden"></p>
+          </div>
+        </section>
+
+        <!-- 快照 -->
+        <section id="view-snapshots" class="view hidden">
+          <div class="page-head">
+            <h1 class="page-title">快照</h1>
+            <button id="refresh-snapshots" class="btn btn-ghost">刷新</button>
+          </div>
+          <div id="snapshot-list" class="list"></div>
+        </section>
+
+        <!-- 设置 -->
+        <section id="view-settings" class="view hidden">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">设置</h1>
+              <p id="config-path" class="page-desc"></p>
+            </div>
+            <div class="page-actions">
+              <button id="config-validate" class="btn btn-ghost">校验</button>
+              <button id="config-save" class="btn btn-primary">保存</button>
+            </div>
+          </div>
+          <div class="settings-layout">
+            <aside id="settings-nav" class="settings-nav"></aside>
+            <div class="settings-main">
+              <div id="settings-section-head" class="settings-section-head"></div>
+              <form id="config-form" class="config-form"></form>
+              <div id="rclone-panel" class="rclone-panel hidden">
+                <div class="panel-head">
+                  <h2 class="panel-title">云存储远程</h2>
+                  <button type="button" id="refresh-remotes" class="btn btn-ghost btn-sm">刷新</button>
+                </div>
+                <form id="rclone-create-form" class="rclone-create">
+                  <div class="form-inline">
+                    <input id="remote-name" placeholder="远程名称" required>
+                    <select id="remote-type" required></select>
+                    <button type="submit" class="btn btn-primary btn-sm">添加</button>
+                  </div>
+                  <textarea id="remote-params" placeholder="参数，每行 key=value&#10;url=https://...&#10;user=alice&#10;pass=secret" rows="3"></textarea>
+                </form>
+                <div id="remote-list" class="remote-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <dialog id="restore-dialog" class="modal">
+    <form method="dialog" id="restore-form">
+      <h3 class="modal-title">恢复快照</h3>
+      <p id="restore-title" class="modal-sub"></p>
+      <label class="field-label">数据来源</label>
+      <select id="restore-source">
+        <option value="local">本地仓库</option>
+        <option value="remote">远程存储</option>
+      </select>
+      <label class="check-row">
+        <input type="checkbox" id="restore-force-online">
+        <span>强制在线恢复（跳过 save-off）</span>
+      </label>
+      <div class="modal-actions">
+        <button value="cancel" class="btn btn-ghost">取消</button>
+        <button id="restore-submit" value="confirm" class="btn btn-primary">开始恢复</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="remote-edit-dialog" class="modal">
+    <form method="dialog" id="remote-edit-form">
+      <h3 class="modal-title">编辑远程</h3>
+      <p id="remote-edit-title" class="modal-sub"></p>
+      <label class="field-label">参数（每行 key=value）</label>
+      <textarea id="remote-edit-params" rows="6"></textarea>
+      <div class="modal-actions">
+        <button value="cancel" class="btn btn-ghost">取消</button>
+        <button id="remote-edit-submit" value="confirm" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

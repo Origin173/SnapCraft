@@ -266,6 +266,38 @@ notify:
 
 也可通过环境变量启用：`SNAPCRAFT_WEBHOOK_URL`。
 
+### WebUI
+
+SnapCraft 提供内置 WebUI，使用 token 登录。UI 遵循项目根目录 [DESIGN.md](../DESIGN.md) 的暗色高对比风格。
+
+1. 在 `config.yaml` 中配置 token：
+
+```yaml
+webui:
+  enabled: false
+  addr: 127.0.0.1:7824
+  token: change-me-to-a-long-random-token
+```
+
+2. 启动 WebUI：
+
+```bash
+snapcraft --webui --config config.yaml
+# 或指定监听地址
+snapcraft --webui --webui-addr 127.0.0.1:7824 --config config.yaml
+```
+
+3. 浏览器打开 `http://127.0.0.1:7824`，输入 token 登录。
+
+WebUI 支持：仪表盘、快照列表与恢复、手动备份、仓库 init/verify、保留策略 prune、rclone remote 管理、只读配置摘要。
+
+**安全建议：**
+
+- 默认绑定 `127.0.0.1`，不要直接暴露到公网
+- 使用足够长的随机 token
+- 可通过 `SNAPCRAFT_WEBUI_TOKEN` / `SNAPCRAFT_WEBUI_ADDR` 覆盖配置
+- 远程访问请使用反向代理 + TLS
+
 ## 环境变量
 
 | 变量 | 覆盖配置项 |
@@ -277,6 +309,8 @@ notify:
 | `SNAPCRAFT_RCON_PASSWORD` | `server.control.rcon.password` |
 | `SNAPCRAFT_RCLONE_REMOTE` | `rclone.remote` |
 | `SNAPCRAFT_RCLONE_PATH` | `rclone.remote_path` |
+| `SNAPCRAFT_WEBUI_TOKEN` | `webui.token` |
+| `SNAPCRAFT_WEBUI_ADDR` | `webui.addr` |
 | `SNAPCRAFT_WEBHOOK_URL` | `notify.webhook.url`（同时启用 webhook） |
 
 ## 备份流程

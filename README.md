@@ -24,11 +24,10 @@ Minecraft 服务器联动备份工具：通过 RCON 安全暂停存档，使用 
 cp config.example.yaml config.yaml
 # 编辑 config.yaml
 
-mkdir -p build/release
-go build -o build/release/snapcraft ./cmd/snapcraft
+go build -o snapcraft ./cmd/snapcraft
 
-./build/release/snapcraft config validate --config config.yaml
-./build/release/snapcraft backup run --config config.yaml
+./snapcraft config validate --config config.yaml
+./snapcraft backup run --config config.yaml
 ```
 
 ## 文档
@@ -41,9 +40,6 @@ go build -o build/release/snapcraft ./cmd/snapcraft
 
 ```text
 config.example.yaml   # 配置示例（复制为 config.yaml 使用）
-build/
-  release/            # 构建产物
-  test/               # 测试报告与覆盖率
 docs/
   usage.md            # 使用说明
 cmd/snapcraft/        # CLI 入口
